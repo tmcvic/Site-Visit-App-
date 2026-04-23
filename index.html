@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="theme-color" content="#111111" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Site Visit" />
+  <title>Site Visit</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <link rel="icon" href="icon-192.png" />
+
+  <style>
+    /* ---------- Reset + tokens ---------- */
+    *, *::before, *::after { box-sizing: border-box; }
+    :root {
+      --bg: #fafaf9;
+      --surface: #ffffff;
+      --surface-2: #f4f4f3;
+      --border: #e5e5e3;
+      --border-strong: #d4d4d1;
+      --text: #111111;
+      --text-muted: #6b6b68;
+      --text-subtle: #9a9a95;
+      --accent: #111111;
+      --accent-contrast: #ffffff;
+      --danger: #9a1f1f;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+      --shadow-md: 0 4px 16px rgba(0,0,0,0.08);
+      --radius: 14px;
+      --radius-sm: 10px;
+      --safe-top: env(safe-area-inset-top);
+      --safe-bottom: env(safe-area-inset-bottom);
+      --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 16px;
+      line-height: 1.4;
+      -webkit-font-smoothing: antialiased;
+      -webkit-tap-highlight-color: transparent;
+      overscroll-behavior-y: contain;
+    }
+    body {
+      min-height: 100vh;
+      min-height: 100dvh;
+      padding-top: var(--safe-top);
+      padding-bottom: var(--safe-bottom);
+    }
+    button {
+      font-family: inherit;
+      font-size: inherit;
+      cursor: pointer;
+    }
+    input, textarea {
+      font-family: inherit;
+      font-size: inherit;
+      color: inherit;
+    }
+
+    /* ---------- App layout ---------- */
+    .app { max-width: 720px; margin: 0 auto; min-height: 100dvh; display: flex; flex-direction: column; }
+    .view { padding: 16px; flex: 1; display: none; }
+    .view.active { display: flex; flex-direction: column; }
+
+    /* ---------- Header ---------- */
+    .topbar {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 4px 16px; min-height: 44px;
+    }
+    .topbar .title { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; flex: 1; }
+    .topbar .subtitle { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+    .iconbtn {
+      background: transparent; border: 0; color: var(--text);
+      padding: 8px; border-radius: 10px;
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 44px; min-height: 44px;
+    }
+    .iconbtn:active { background: var(--surface-2); }
+
+    /* ---------- Buttons ---------- */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      gap: 8px; padding: 14px 18px; border-radius: var(--radius-sm);
+      border: 1px solid var(--border-strong); background: var(--surface);
+      color: var(--text); font-weight: 500; min-height: 48px;
+      transition: background .12s ease;
+    }
+    .btn:active { background: var(--surface-2); }
+    .btn.primary { background: var(--accent); color: var(--accent-contrast); border-color: var(--accent); }
+    .btn.primary:active { background: #2a2a28; }
+    .btn.danger { color: var(--danger); border-color: var(--border); }
+    .btn.ghost { border-color: transparent; background: transparent; }
+    .btn.block { width: 100%; }
+    .btn.small { padding: 8px 12px; min-height: 36px; font-size: 14px; }
+
+    /* ---------- Main page ---------- */
+    .projects-grid {
+      display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;
+    }
+    .project-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 14px; min-height: 110px;
+      display: flex; flex-direction: column; justify-content: space-between;
+      text-align: left; overflow: hidden;
+    }
+    .project-card:active { background: var(--surface-2); }
+    .project-card .name { font-weight: 600; font-size: 15px; line-height: 1.25; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+    .project-card .meta { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
+    .project-card .status {
+      display: inline-block; margin-top: 6px; font-size: 11px;
+      padding: 2px 8px; border-radius: 999px;
+      background: var(--surface-2); color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    .project-card.in_progress .status { background: #fff3cd; color: #8b6a00; }
+    .empty {
+      text-align: center; color: var(--text-muted); padding: 48px 16px;
+      border: 1px dashed var(--border-strong); border-radius: var(--radius);
+    }
+    .new-project-wrap { margin-top: 16px; }
+
+    /* ---------- Form ---------- */
+    .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+    .field label { font-size: 13px; color: var(--text-muted); font-weight: 500; }
+    .field input, .field textarea {
+      width: 100%; padding: 12px 14px;
+      background: var(--surface); border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm); outline: none;
+      min-height: 48px;
+    }
+    .field textarea { min-height: 90px; resize: vertical; line-height: 1.45; }
+    .field input:focus, .field textarea:focus { border-color: var(--text); }
+
+    /* ---------- Modal ---------- */
+    .modal-backdrop {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.35);
+      display: none; align-items: flex-end; justify-content: center;
+      z-index: 100; padding: 16px;
+    }
+    .modal-backdrop.active { display: flex; }
+    .modal {
+      background: var(--surface); border-radius: var(--radius);
+      width: 100%; max-width: 480px; padding: 20px;
+      box-shadow: var(--shadow-md);
+      padding-bottom: calc(20px + var(--safe-bottom));
+    }
+    .modal h3 { margin: 0 0 12px; font-size: 18px; }
+    .modal-actions { display: flex; gap: 8px; margin-top: 8px; }
+    .modal-actions .btn { flex: 1; }
+
+    /* ---------- Capture / detail page ---------- */
+    .media-stage {
+      background: var(--surface-2); border-radius: var(--radius);
+      aspect-ratio: 4/5; display: flex; align-items: center; justify-content: center;
+      overflow: hidden; position: relative; margin-bottom: 12px;
+      border: 1px solid var(--border);
+    }
+    .media-stage img, .media-stage video {
+      width: 100%; height: 100%; object-fit: cover; display: block;
+    }
+    .media-stage .placeholder { color: var(--text-subtle); text-align: center; padding: 24px; font-size: 14px; }
+    .media-stage .capture-overlay {
+      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      background: linear-gradient(to bottom, rgba(0,0,0,0), rgba(0,0,0,0.05));
+    }
+    .video-badge {
+      position: absolute; top: 10px; left: 10px;
+      background: rgba(0,0,0,0.7); color: white; font-size: 11px;
+      padding: 4px 8px; border-radius: 999px; letter-spacing: 0.04em;
+    }
+    .capture-buttons { display: flex; gap: 8px; margin-bottom: 12px; }
+    .capture-buttons .btn { flex: 1; }
+    .capture-buttons input[type="file"] { display: none; }
+    .nav-buttons { display: flex; gap: 8px; margin-top: auto; padding-top: 16px; }
+    .nav-buttons .btn { flex: 1; }
+
+    /* ---------- Report grid ---------- */
+    .report-header {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 14px; margin-bottom: 12px;
+    }
+    .report-header h2 { margin: 0 0 4px; font-size: 18px; }
+    .report-header .meta { color: var(--text-muted); font-size: 13px; }
+    .report-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .report-cell {
+      position: relative; aspect-ratio: 1; overflow: hidden;
+      background: var(--surface-2); border-radius: var(--radius-sm);
+      border: 1px solid var(--border); cursor: pointer;
+    }
+    .report-cell.dragging { opacity: 0.4; }
+    .report-cell.drop-target { outline: 2px solid var(--text); outline-offset: -2px; }
+    .report-cell img {
+      width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none;
+    }
+    .report-cell .cell-title {
+      position: absolute; left: 0; right: 0; bottom: 0;
+      padding: 6px 8px; font-size: 12px; color: white;
+      background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);
+      overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+    }
+    .reorder-hint {
+      text-align: center; font-size: 12px; color: var(--text-muted);
+      padding: 8px 0; display: none;
+    }
+    .reorder-mode .reorder-hint { display: block; }
+    .reorder-mode .report-cell { cursor: grab; }
+    .export-row { margin-top: 16px; display: flex; gap: 8px; }
+    .export-row .btn { flex: 1; }
+
+    /* ---------- Progress / toast ---------- */
+    .toast {
+      position: fixed; left: 50%; bottom: calc(24px + var(--safe-bottom));
+      transform: translateX(-50%);
+      background: #111; color: #fff; padding: 10px 16px; border-radius: 999px;
+      font-size: 14px; z-index: 200; opacity: 0; pointer-events: none;
+      transition: opacity .2s ease;
+    }
+    .toast.show { opacity: 1; }
+
+    .spinner-overlay {
+      position: fixed; inset: 0; background: rgba(255,255,255,0.8);
+      z-index: 300; display: none; align-items: center; justify-content: center;
+      flex-direction: column; gap: 12px;
+    }
+    .spinner-overlay.active { display: flex; }
+    .spinner {
+      width: 28px; height: 28px; border: 3px solid var(--border-strong);
+      border-top-color: var(--text); border-radius: 50%;
+      animation: spin 0.9s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner-overlay .label { color: var(--text-muted); font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div class="app" id="app">
+
+    <!-- Main / Home view -->
+    <section class="view" id="view-home">
+      <div class="topbar">
+        <div style="flex:1;">
+          <div class="title">Site Visit</div>
+          <div class="subtitle" id="home-subtitle">Your projects</div>
+        </div>
+      </div>
+      <div id="projects-container"></div>
+      <div class="new-project-wrap">
+        <button class="btn primary block" id="btn-new-project">＋ New Project</button>
+      </div>
+    </section>
+
+    <!-- Capture view -->
+    <section class="view" id="view-capture">
+      <div class="topbar">
+        <button class="iconbtn" id="capture-back" aria-label="Back">←</button>
+        <div style="flex:1;">
+          <div class="title" id="capture-project-name">Project</div>
+          <div class="subtitle" id="capture-project-meta"></div>
+        </div>
+        <button class="iconbtn" id="capture-finish" aria-label="Finish">✓</button>
+      </div>
+
+      <div class="media-stage" id="capture-stage">
+        <div class="placeholder">Tap Take Photo or Record Video to begin</div>
+      </div>
+
+      <div class="capture-buttons">
+        <label class="btn" for="file-photo">📷 Photo</label>
+        <input type="file" id="file-photo" accept="image/*" capture="environment" />
+        <label class="btn" for="file-video">🎥 Video</label>
+        <input type="file" id="file-video" accept="video/*" capture="environment" />
+      </div>
+
+      <div class="field">
+        <label for="media-title">Title</label>
+        <input type="text" id="media-title" placeholder="e.g. Kitchen — north wall" />
+      </div>
+      <div class="field">
+        <label for="media-description">Description</label>
+        <textarea id="media-description" placeholder="Notes about this photo or video"></textarea>
+      </div>
+
+      <div class="nav-buttons">
+        <button class="btn" id="capture-save-only">Save</button>
+        <button class="btn primary" id="capture-save-next">Save & Next →</button>
+      </div>
+    </section>
+
+    <!-- Report view -->
+    <section class="view" id="view-report">
+      <div class="topbar">
+        <button class="iconbtn" id="report-back" aria-label="Back">←</button>
+        <div style="flex:1;">
+          <div class="title" id="report-project-name">Report</div>
+          <div class="subtitle" id="report-project-meta"></div>
+        </div>
+        <button class="iconbtn" id="report-reorder-toggle" aria-label="Reorder">⇅</button>
+      </div>
+
+      <div class="report-header" id="report-header"></div>
+
+      <div class="reorder-hint">Drag tiles to reorder. Tap ⇅ again to finish.</div>
+
+      <div class="report-grid" id="report-grid"></div>
+
+      <div class="export-row">
+        <button class="btn" id="report-resume">+ Add More</button>
+        <button class="btn primary" id="report-export">Export Report</button>
+      </div>
+      <div style="margin-top:16px; text-align:center;">
+        <button class="btn ghost small danger" id="report-delete-project">Delete project</button>
+      </div>
+    </section>
+
+    <!-- Detail view (media within a finished project) -->
+    <section class="view" id="view-detail">
+      <div class="topbar">
+        <button class="iconbtn" id="detail-back" aria-label="Back">←</button>
+        <div style="flex:1;">
+          <div class="title" id="detail-project-name">Detail</div>
+          <div class="subtitle" id="detail-position"></div>
+        </div>
+        <button class="iconbtn" id="detail-delete" aria-label="Delete">🗑</button>
+      </div>
+
+      <div class="media-stage" id="detail-stage"></div>
+
+      <div class="field">
+        <label for="detail-title">Title</label>
+        <input type="text" id="detail-title" />
+      </div>
+      <div class="field">
+        <label for="detail-description">Description</label>
+        <textarea id="detail-description"></textarea>
+      </div>
+
+      <div class="nav-buttons">
+        <button class="btn" id="detail-prev">← Back</button>
+        <button class="btn" id="detail-next">Next →</button>
+      </div>
+    </section>
+  </div>
+
+  <!-- New project modal -->
+  <div class="modal-backdrop" id="modal-new">
+    <div class="modal">
+      <h3>New Project</h3>
+      <div class="field">
+        <label for="new-name">Project name</label>
+        <input type="text" id="new-name" placeholder="e.g. 123 Main St — pre-lease walkthrough" />
+      </div>
+      <div class="field">
+        <label for="new-address">Address <span style="color:var(--text-subtle);font-weight:400;">(optional)</span></label>
+        <input type="text" id="new-address" placeholder="Street, City" />
+      </div>
+      <div class="modal-actions">
+        <button class="btn" id="new-cancel">Cancel</button>
+        <button class="btn primary" id="new-create">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirm modal -->
+  <div class="modal-backdrop" id="modal-confirm">
+    <div class="modal">
+      <h3 id="confirm-title">Are you sure?</h3>
+      <div id="confirm-body" style="color:var(--text-muted);margin-bottom:12px;"></div>
+      <div class="modal-actions">
+        <button class="btn" id="confirm-cancel">Cancel</button>
+        <button class="btn primary" id="confirm-ok">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <div class="spinner-overlay" id="spinner">
+    <div class="spinner"></div>
+    <div class="label" id="spinner-label">Working…</div>
+  </div>
+
+  <!-- Libraries (cached by service worker after first load) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+  <script src="app.js"></script>
+</body>
+</html>
