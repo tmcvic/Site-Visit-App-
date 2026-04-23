@@ -95,10 +95,17 @@
     .btn:active { background: var(--surface-2); }
     .btn.primary { background: var(--accent); color: var(--accent-contrast); border-color: var(--accent); }
     .btn.primary:active { background: #2a2a28; }
+    .btn.success {
+      background: #16a34a; color: #ffffff; border-color: #15803d;
+      box-shadow: 0 2px 8px rgba(22, 163, 74, 0.25);
+    }
+    .btn.success:active { background: #15803d; }
     .btn.danger { color: var(--danger); border-color: var(--border); }
     .btn.ghost { border-color: transparent; background: transparent; }
     .btn.block { width: 100%; }
     .btn.small { padding: 8px 12px; min-height: 36px; font-size: 14px; }
+    .btn.large { min-height: 56px; font-size: 17px; font-weight: 600; letter-spacing: 0.01em; }
+    .finish-row { margin-top: 16px; }
 
     /* ---------- Main page ---------- */
     .projects-grid {
@@ -264,7 +271,6 @@
           <div class="title" id="capture-project-name">Project</div>
           <div class="subtitle" id="capture-project-meta"></div>
         </div>
-        <button class="iconbtn" id="capture-finish" aria-label="Finish">✓</button>
       </div>
 
       <div class="media-stage" id="capture-stage">
@@ -290,6 +296,10 @@
       <div class="nav-buttons">
         <button class="btn" id="capture-save-only">Save</button>
         <button class="btn primary" id="capture-save-next">Save & Next →</button>
+      </div>
+
+      <div class="finish-row">
+        <button class="btn success block large" id="capture-finish">✓ Finish Project</button>
       </div>
     </section>
 
@@ -387,7 +397,6 @@
 
   <!-- Libraries (cached by service worker after first load) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
   <script src="app.js"></script>
 </body>

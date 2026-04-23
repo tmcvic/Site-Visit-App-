@@ -686,7 +686,7 @@
 
   $('#detail-back').addEventListener('click', () => navigate(`/project/${detailState.projectId}/report`));
 
-  /* ---------- PDF + ZIP export ---------- */
+  /* ---------- PDF export ---------- */
 
   $('#report-export').addEventListener('click', async () => {
     const projectId = reportState.projectId;
@@ -694,32 +694,25 @@
     const media = await db.listMedia(projectId);
     if (!media.length) { toast('Nothing to export yet'); return; }
 
-    spinner.show('Building report…');
+    spinner.show('Building PDF…');
     try {
-      const { pdfBlob, filenames } = await buildPdf(p, media);
-      const zip = new JSZip();
-      zip.file('report.pdf', pdfBlob);
-      const mediaFolder = zip.folder('media');
-      for (let i = 0; i < media.length; i++) {
-        mediaFolder.file(filenames[i], media[i].blob);
-      }
-      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const pdfBlob = await buildPdf(p, media);
       const safe = (p.name || 'site-visit').replace(/[^a-z0-9-_ ]/gi, '').trim().replace(/\s+/g, '-').toLowerCase() || 'site-visit';
-      const filename = `${safe}-${p.createdAt.slice(0, 10)}.zip`;
+      const filename = `${safe}-${p.createdAt.slice(0, 10)}.pdf`;
 
       // Prefer the iOS Share sheet so "Save to Files" / "Save to iCloud Drive"
       // is one tap away. Falls back to a plain download on browsers without it.
-      const shareFile = new File([zipBlob], filename, { type: 'application/zip' });
+      const shareFile = new File([pdfBlob], filename, { type: 'application/pdf' });
       if (navigator.canShare && navigator.canShare({ files: [shareFile] })) {
         try {
           await navigator.share({ files: [shareFile], title: p.name, text: `Site visit report: ${p.name}` });
           toast('Report shared');
         } catch (e) {
           // User cancelled or share failed — fall back to download
-          if (e?.name !== 'AbortError') triggerDownload(zipBlob, filename);
+          if (e?.name !== 'AbortError') triggerDownload(pdfBlob, filename);
         }
       } else {
-        triggerDownload(zipBlob, filename);
+        triggerDownload(pdfBlob, filename);
         toast('Report downloaded');
       }
     } catch (e) {
@@ -745,10 +738,15 @@
     const pageH = doc.internal.pageSize.getHeight();
     const margin = 40;
     const contentW = pageW - margin * 2;
+    const bottomLimit = pageH - margin - 24; // leave room for footer
+
+    const photos = media.filter(m => m.type === 'image');
+    const videos = media.filter(m => m.type === 'video');
 
     // ----- Cover / header -----
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(22);
+    doc.setTextColor(20);
     doc.text(project.name || 'Site Visit', margin, margin + 10);
 
     doc.setFont('helvetica', 'normal');
@@ -761,119 +759,123 @@
     }
     doc.text(`Visit: ${fmtDate(project.createdAt)}`, margin, cursorY);
     cursorY += 16;
-    doc.text(`${media.length} item${media.length === 1 ? '' : 's'}`, margin, cursorY);
-    cursorY += 24;
+    const counts = [];
+    if (photos.length) counts.push(`${photos.length} photo${photos.length === 1 ? '' : 's'}`);
+    if (videos.length) counts.push(`${videos.length} video${videos.length === 1 ? '' : 's'}`);
+    doc.text(counts.join(' · ') || '0 items', margin, cursorY);
+    cursorY += 22;
     doc.setDrawColor(220);
     doc.line(margin, cursorY, pageW - margin, cursorY);
-    cursorY += 16;
-
+    cursorY += 18;
     doc.setTextColor(20);
 
-    // ----- Grid of thumbnails with captions -----
+    // ----- Grid renderer -----
     const cols = 2;
     const gap = 14;
     const cellW = (contentW - gap * (cols - 1)) / cols;
     const imgH = cellW * 0.75; // 4:3
-    const captionReserveMin = 50;
-    const filenames = [];
 
-    let col = 0;
-    let rowTop = cursorY;
-    const pagePadding = 40;
-    const bottomLimit = pageH - margin;
+    const captionLines = (m, i) => {
+      const tLines = doc.splitTextToSize(m.title || `Item ${i + 1}`, cellW).length;
+      const dLines = m.description ? Math.min(6, doc.splitTextToSize(m.description, cellW).length) : 0;
+      return tLines + dLines;
+    };
 
-    for (let i = 0; i < media.length; i++) {
-      const m = media[i];
-      const ext = (m.mimeType?.split('/')[1] || (m.type === 'image' ? 'jpg' : 'mp4')).split(';')[0];
-      const baseName = (m.title || `item-${i + 1}`).replace(/[^a-z0-9-_ ]/gi, '').trim().replace(/\s+/g, '-').toLowerCase() || `item-${i + 1}`;
-      const filename = `${String(i + 1).padStart(2, '0')}-${baseName}.${ext}`;
-      filenames.push(filename);
+    async function renderGrid(items, sectionTitle, videoBadge) {
+      if (!items.length) return;
 
-      // Need enough space for image + ~80pt of caption
-      if (rowTop + imgH + captionReserveMin + pagePadding > bottomLimit && col === 0) {
-        // fits check fails; should not happen at start of new page
-      }
+      // Section heading — new page if it won't fit with at least one row
+      if (cursorY + 40 + imgH > bottomLimit) { doc.addPage(); cursorY = margin; }
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(14); doc.setTextColor(20);
+      doc.text(sectionTitle, margin, cursorY);
+      cursorY += 8;
+      doc.setDrawColor(220);
+      doc.line(margin, cursorY, pageW - margin, cursorY);
+      cursorY += 18;
 
-      const x = margin + col * (cellW + gap);
-      const y = rowTop;
+      for (let i = 0; i < items.length; i += cols) {
+        const row = items.slice(i, i + cols);
+        let maxCapLines = 1;
+        row.forEach((m, j) => {
+          maxCapLines = Math.max(maxCapLines, captionLines(m, i + j));
+        });
+        const rowHeight = imgH + 14 + maxCapLines * 12 + 22;
 
-      // Image
-      const imgBlob = m.type === 'image' ? m.blob : m.thumbnail;
-      if (imgBlob) {
-        try {
-          const { dataUrl, format } = await blobToPdfImage(imgBlob);
-          // Fit image into cellW x imgH preserving aspect ratio
-          doc.addImage(dataUrl, format, x, y, cellW, imgH, undefined, 'FAST');
-        } catch (e) {
-          doc.setDrawColor(200); doc.rect(x, y, cellW, imgH);
-          doc.setFontSize(10); doc.setTextColor(150);
-          doc.text('(no preview)', x + 10, y + imgH / 2);
-          doc.setTextColor(20);
-        }
-      } else {
-        doc.setDrawColor(200); doc.rect(x, y, cellW, imgH);
-      }
-
-      // Video badge
-      if (m.type === 'video') {
-        doc.setFillColor(0, 0, 0);
-        doc.roundedRect(x + 6, y + 6, 50, 16, 3, 3, 'F');
-        doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(255);
-        doc.text('VIDEO', x + 12, y + 17);
-        doc.setTextColor(20); doc.setFont('helvetica', 'normal');
-      }
-
-      // Caption block
-      doc.setFontSize(11);
-      doc.setFont('helvetica', 'bold');
-      const titleLines = doc.splitTextToSize(m.title || `Item ${i + 1}`, cellW);
-      let ty = y + imgH + 14;
-      doc.text(titleLines, x, ty);
-      ty += titleLines.length * 14;
-
-      if (m.description) {
-        doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(80);
-        const descLines = doc.splitTextToSize(m.description, cellW);
-        const maxDescLines = 6;
-        const toDraw = descLines.slice(0, maxDescLines);
-        doc.text(toDraw, x, ty);
-        ty += toDraw.length * 11;
-        if (descLines.length > maxDescLines) {
-          doc.setTextColor(140);
-          doc.text('…', x, ty);
-          ty += 10;
-        }
-        doc.setTextColor(20);
-      }
-
-      if (m.type === 'video') {
-        doc.setFont('helvetica', 'italic'); doc.setFontSize(8); doc.setTextColor(110);
-        doc.text(`Video file: media/${filename}`, x, ty);
-        doc.setTextColor(20); doc.setFont('helvetica', 'normal');
-      }
-
-      // Advance layout
-      col++;
-      if (col >= cols) {
-        col = 0;
-        // Row height = imgH + caption space (use conservative estimate based on description length)
-        const descLen = m.description ? Math.min(6, Math.ceil(doc.splitTextToSize(m.description, cellW).length)) : 0;
-        const rowHeight = imgH + 14 + 14 + descLen * 11 + (m.type === 'video' ? 16 : 0) + 20;
-        rowTop += rowHeight;
-
-        if (rowTop + imgH + captionReserveMin > bottomLimit && i < media.length - 1) {
+        if (cursorY + rowHeight > bottomLimit) {
           doc.addPage();
-          rowTop = margin;
+          cursorY = margin;
+          // re-print section heading at top of continuation page
+          doc.setFont('helvetica', 'bold'); doc.setFontSize(14); doc.setTextColor(20);
+          doc.text(`${sectionTitle} (continued)`, margin, cursorY);
+          cursorY += 8;
+          doc.setDrawColor(220);
+          doc.line(margin, cursorY, pageW - margin, cursorY);
+          cursorY += 18;
         }
+
+        for (let j = 0; j < row.length; j++) {
+          const m = row[j];
+          const x = margin + j * (cellW + gap);
+          const y = cursorY;
+
+          // Image (or video thumbnail)
+          const imgBlob = m.type === 'image' ? m.blob : m.thumbnail;
+          if (imgBlob) {
+            try {
+              const { dataUrl, format } = await blobToPdfImage(imgBlob);
+              doc.addImage(dataUrl, format, x, y, cellW, imgH, undefined, 'FAST');
+            } catch (e) {
+              doc.setDrawColor(200); doc.rect(x, y, cellW, imgH);
+              doc.setFontSize(10); doc.setTextColor(150);
+              doc.text('(no preview)', x + 10, y + imgH / 2);
+            }
+          } else {
+            doc.setDrawColor(200); doc.rect(x, y, cellW, imgH);
+            doc.setFontSize(10); doc.setTextColor(150);
+            doc.text('(no preview)', x + 10, y + imgH / 2);
+          }
+
+          // Video badge
+          if (videoBadge) {
+            doc.setFillColor(0, 0, 0);
+            doc.roundedRect(x + 6, y + 6, 50, 16, 3, 3, 'F');
+            doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(255);
+            doc.text('VIDEO', x + 12, y + 17);
+          }
+
+          // Caption
+          doc.setTextColor(20);
+          doc.setFontSize(11); doc.setFont('helvetica', 'bold');
+          const titleLines = doc.splitTextToSize(m.title || `Item ${i + j + 1}`, cellW);
+          let ty = y + imgH + 14;
+          doc.text(titleLines, x, ty);
+          ty += titleLines.length * 13;
+
+          if (m.description) {
+            doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(80);
+            const descLines = doc.splitTextToSize(m.description, cellW).slice(0, 6);
+            doc.text(descLines, x, ty);
+            doc.setTextColor(20);
+          }
+        }
+        cursorY += rowHeight;
       }
+      cursorY += 12; // spacer before next section
     }
 
-    // Footer on last page
-    doc.setFontSize(8); doc.setTextColor(150);
-    doc.text('Generated with Site Visit · ' + fmtDateTime(new Date().toISOString()), margin, pageH - 20);
+    await renderGrid(photos, 'Photos', false);
+    await renderGrid(videos, 'Videos', true);
 
-    const pdfBlob = doc.output('blob');
-    return { pdfBlob, filenames };
+    // Footer on every page
+    const pageCount = doc.internal.getNumberOfPages();
+    const stamp = fmtDateTime(new Date().toISOString());
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setFontSize(8); doc.setTextColor(150);
+      doc.text(`Site Visit · ${stamp} · Page ${i} of ${pageCount}`, margin, pageH - 20);
+    }
+
+    return doc.output('blob');
   }
 
   /**

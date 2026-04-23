@@ -2,7 +2,7 @@
    Caches the app shell + CDN libraries so the PWA works offline
    after the first load. Bump CACHE_VERSION to invalidate old caches. */
 
-const CACHE_VERSION = 'site-visit-v1';
+const CACHE_VERSION = 'site-visit-v2';
 const APP_SHELL = [
   './',
   './index.html',
@@ -14,8 +14,7 @@ const APP_SHELL = [
 ];
 
 const CDN_ASSETS = [
-  'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'
+  'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'
 ];
 
 self.addEventListener('install', event => {
