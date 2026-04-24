@@ -2,7 +2,7 @@
    Caches the app shell + CDN libraries so the PWA works offline
    after the first load. Bump CACHE_VERSION to invalidate old caches. */
 
-const CACHE_VERSION = 'site-visit-v2';
+const CACHE_VERSION = 'harvest-fieldnotes-v3';
 const APP_SHELL = [
   './',
   './index.html',
@@ -10,11 +10,14 @@ const APP_SHELL = [
   './manifest.json',
   './icon-192.png',
   './icon-512.png',
-  './icon-512-maskable.png'
+  './icon-512-maskable.png',
+  './brand/harvest-logo-green.png',
+  './brand/harvest-logo-white.png'
 ];
 
 const CDN_ASSETS = [
-  'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'
+  'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
+  'https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Source+Sans+3:wght@400;500;600;700&display=swap'
 ];
 
 self.addEventListener('install', event => {

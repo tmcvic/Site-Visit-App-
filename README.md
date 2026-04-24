@@ -1,8 +1,10 @@
-# Site Visit
+# HARVEST FieldNotes
 
-A tiny, neutral, offline-first PWA for capturing photos and videos on site visits, writing short captions, reordering, and exporting a PDF report (bundled in a ZIP with the original media).
+A kitchen-ready record of the field.
 
-Everything runs on your phone. No account, no cloud, no server logic.
+HARVEST FieldNotes is a mobile-first, offline PWA for HARVEST Clean Eats field teams. Log farm walks, supplier tours, and seasonal sourcing visits by capturing photos and videos with short notes, then deliver a HARVEST-branded PDF report to the kitchen in one tap.
+
+Everything runs on the phone. No account, no cloud, no server logic.
 
 ---
 
@@ -10,95 +12,106 @@ Everything runs on your phone. No account, no cloud, no server logic.
 
 | File | Purpose |
 |---|---|
-| `index.html` | The UI shell — HTML + CSS |
-| `app.js` | All app logic (IndexedDB storage, routing, capture, editing, export) |
-| `manifest.json` | PWA metadata (name, icons, start URL) |
-| `sw.js` | Service worker — caches the app for offline use |
+| `index.html` | The UI shell — HTML + CSS with the approved HARVEST design system |
+| `app.js` | All app logic (IndexedDB storage, routing, capture, editing, PDF export) |
+| `manifest.json` | PWA metadata (name, icons, start URL, theme color) |
+| `sw.js` | Service worker — caches the app, logos, and fonts for offline use |
+| `brand/harvest-logo-green.png` | Approved HARVEST Clean Eats logo (dark green on transparent) |
+| `brand/harvest-logo-white.png` | Approved HARVEST logo, white version (for dark backgrounds) |
 | `icon-192.png`, `icon-512.png`, `icon-512-maskable.png` | Home-screen icons |
+| `design-brief.md`, `design-prompts.md` | Design system source-of-truth, kept in the repo for reference |
 
-That's the entire app. No build step, no npm, no server.
+No build step, no npm, no server.
 
 ---
 
-## Deploy it (free, 5 minutes)
+## Design system
 
-The app is a folder of static files, so any static host works. Easiest path: **GitHub Pages**.
+The app uses the approved HARVEST Clean Eats identity (Pantone 343C / 366C, Oswald + Source Sans 3). The brand tokens are defined as CSS variables at the top of `index.html`:
 
-1. Create a new GitHub repository — call it whatever, e.g. `site-visit-app`.
-2. Drag every file from this folder into the repo (or `git push` them).
-3. In the repo on GitHub: **Settings → Pages → Branch: `main` / `/ (root)` → Save**.
-4. Wait ~30 seconds. GitHub gives you a URL like `https://<your-username>.github.io/site-visit-app/`.
+- `--ink` `#185641` — primary (Harvest Dark Green, Pantone 343C)
+- `--accent` `#B5DB78` — secondary / accent (Harvest Light Green, Pantone 366C)
+- `--paper` `#FFFFFF` — background
+- `--paper-alt` `#EDF4E2` — surface wash
+- `--ink-muted` `#4B6B5A` — secondary text
+- `--stone` `#9FB48A` — tertiary / eyebrow
+- `--rule` `#D5E5BF` — borders
+- `--danger` `#A03524` — destructive actions (sparingly)
 
-The app needs to be served over **HTTPS** for camera access and service workers to work. GitHub Pages handles this automatically.
+Type: **Oswald** for display headings (uppercase, semibold), **Source Sans 3** for all UI text.
 
-Other free options that work the same way: **Cloudflare Pages**, **Netlify Drop** (drag-and-drop the folder at `app.netlify.com/drop`), or **Vercel**.
+The logo is the approved HARVEST PNG — never recreated, recolored, cropped, or stylized.
+
+---
+
+## Deploy it
+
+The app is a folder of static files. Easiest path: **GitHub Pages**.
+
+1. `git push` the repo to GitHub.
+2. **Settings → Pages → Branch: `main` / `/ (root)` → Save.**
+3. GitHub gives you a URL like `https://<user>.github.io/site-visit-app/`.
+
+HTTPS is required for camera access and the service worker. GitHub Pages handles this automatically. Cloudflare Pages, Netlify Drop, and Vercel work the same way.
 
 ---
 
 ## Install on iPhone
 
-1. Open the GitHub Pages URL in **Safari** (not Chrome — only Safari can install PWAs on iOS).
-2. Tap the **Share** button → **Add to Home Screen** → Add.
-3. The app now lives on your home screen with its own icon. Launches fullscreen, hides the Safari UI.
-4. Open it once while online so the service worker caches everything. After that, it works completely offline.
+1. Open the deploy URL in **Safari** (only Safari installs PWAs on iOS).
+2. Share → **Add to Home Screen** → Add.
+3. The app launches fullscreen from the home screen with its own icon.
+4. Open it once while online so the service worker caches everything. After that it works fully offline.
 
 ---
 
 ## How to use it
 
-- **New Project** on the home screen creates a project. Give it a name and (optionally) an address. The visit date is auto-stamped.
-- The **Capture screen** is where you take photos and videos. Each one gets a title and description. Tap **Save & Next** to add another. Tap the **✓** in the top-right to finish the project.
-- The **Report view** shows all media in a grid. Tap any tile to edit its title/description, swipe Back/Next through the collection, or delete it.
-- Tap **⇅** in the report view top-right to enter reorder mode. **Long-press and drag** a tile to move it. Tap **⇅** again to save the new order.
-- Tap **+ Add More** to resume capturing in a finished project.
-- **Export Report** produces a ZIP file:
-  - `report.pdf` — cover with project name, address, date, then a 2-column grid of photos with captions. Videos show a thumbnail with a VIDEO badge and a reference to the file in the `media/` folder.
-  - `media/` — all originals (photos + videos), renamed with their order and title.
+- **Start a tour** on Home to begin a new walk. Give the farm/site a name, and optionally a location.
+- **Capture** — tap Photo or Video to invoke the camera, write a short title and note, then **Save & next** for the next record. Fields and text can be updated later.
+- **Close tour** — the prominent green button finishes the walk and flips to the report view.
+- **Report** — project header with photo/video/record counts, then a numbered grid of records. Tap a record to edit its title and notes. Tap the handle (⋮⋮) top-right to reorder by drag. Tap **Add more** to resume capturing.
+- **Export report** — generates the HARVEST-branded PDF. On iPhone this opens the Share sheet; Save to Files → iCloud Drive gets it into a persistent folder automatically.
 
-On iPhone, tapping Export Report opens Apple's **Share sheet** directly. From there:
-- **Save to Files → iCloud Drive → [pick a folder]** backs the ZIP up to iCloud automatically (syncs to your Mac).
-- **Mail / Messages / AirDrop** sends the ZIP to someone.
-- **Dropbox / Google Drive** (if installed) uploads directly.
+## Voice
 
-If you want every export to land in the same iCloud folder, make a folder once (e.g. `iCloud Drive / Site Visits`) and just tap it each time the Share sheet opens.
+Copy is grounded and practical — "Logged.", "No walks logged yet. Start one when you get to the farm.", "Field report ready." Never cute, never salesy. Written like a farmer, not a marketer.
 
 ---
 
 ## Where the data lives
 
-All projects and media live in **IndexedDB** inside Safari's storage for this app, on your phone. Specifically:
-- Photos and videos are stored as raw **Blobs**, not re-encoded.
-- Nothing leaves your phone unless you explicitly export and share the ZIP.
+All tours and media live in **IndexedDB** on the device. Photos and videos are stored as raw Blobs. Nothing leaves the phone unless the user explicitly exports and shares the PDF.
 
-### Storage limits to be aware of
-
-iOS Safari roughly caps PWA storage around **1 GB** before prompting. A 1-minute 4K video can be ~350 MB. If you're capturing long videos, you'll hit the ceiling fast.
-
-Mitigations baked into the workflow:
-1. **Export after each site visit.** Once you've got the ZIP, you have the originals in iCloud / Files / email — you don't need them in the app anymore.
-2. **Delete finished projects.** Long-press (desktop) or right-click a project card on the home screen to delete it. (On iOS, you can add a delete button to the detail page later if needed.)
-
-If you want a harder limit removal, the fallback is a native iOS app built in Xcode — happy to build that as v2 if you outgrow the PWA.
+iOS Safari caps PWA storage around **1 GB** before prompting. A 1-minute 4K video is ~350 MB, so long videos fill storage fast. Mitigation: export the PDF after each tour, then delete old tours from the home screen (long-press a card).
 
 ---
 
 ## Offline behavior
 
-- **First load requires internet** so the service worker can cache the app and its two external libraries (jsPDF, JSZip).
-- After that, everything works offline: capturing, editing, reordering, PDF export, ZIP export.
-- Updates: when you push new code to the repo, the service worker picks up the new version on next launch (give it one refresh).
+- First load requires internet so the service worker can cache the app shell, HARVEST logos, jsPDF, and Google Fonts.
+- After that: capture, edit, reorder, and PDF export all work offline.
+- On each `CACHE_VERSION` bump in `sw.js`, existing installs pull the new code on next launch.
 
 ---
 
-## Known limitations (v1)
+## PDF report template
 
-- Photos are stored at full resolution — storage fills quickly with lots of 4K photos. Could add a "compress on capture" setting later.
-- Videos in the PDF show a thumbnail but aren't playable *inside* the PDF — you share the video file separately from the ZIP's `media/` folder. This is intentional (embedded video in PDF is unreliable across readers).
-- No multi-device sync. If you wipe the app, the projects are gone. Export your ZIP regularly.
-- No auth, no sharing links, no team features. Single-user, single-device.
+Letter-size, HARVEST-branded, built for client delivery:
+
+- **Top masthead bar** — 8pt Harvest Light Green across the top of every page.
+- **Cover** — approved logo top-left, "Farm visit report" eyebrow, hero image (first photo of the tour), uppercase display title, address and context line, four-column meta grid (Prepared by · Visit date · Photographs · Videos).
+- **Photographs section** — "Field records" display heading with accent bar, 2-column 4:3 grid, each cell numbered ("No. 01") with title and notes.
+- **Video record section** — identical grid with VIDEO chip on each still. A PDF can't play video, so the still + caption is the representation.
+- **Page footer on every interior page** — unaltered HARVEST logo, tour name centered, page number right.
+
+The PDF is the primary artifact users share — it's treated as a premium deliverable, not a printout.
 
 ---
 
-## If you want to change the design
+## Known limitations
 
-Everything visual lives in the `<style>` block at the top of `index.html`. The color tokens are CSS variables at the top (`--bg`, `--text`, `--accent`, etc.) — change the accent once and the whole app reflects it. Fonts are stacked system fonts by default.
+- Photos are stored and embedded at scaled resolution (down-sampled to ~1400px long edge for PDF to keep file sizes reasonable).
+- Videos are represented in the PDF as a still frame + caption. Delivering actual footage is a future enhancement.
+- No multi-device sync. Export regularly.
+- Single-user, single-device.

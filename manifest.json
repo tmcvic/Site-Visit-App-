@@ -1,13 +1,13 @@
 {
-  "name": "Site Visit",
-  "short_name": "Site Visit",
-  "description": "Offline photo & video capture with PDF report export for site visits.",
+  "name": "HARVEST FieldNotes",
+  "short_name": "FieldNotes",
+  "description": "A kitchen-ready record of the field. Capture photos and videos on farm walks, supplier tours, and sourcing visits — then deliver a branded PDF report in one tap.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#fafaf9",
-  "theme_color": "#111111",
+  "background_color": "#EDF4E2",
+  "theme_color": "#185641",
   "icons": [
     {
       "src": "icon-192.png",
