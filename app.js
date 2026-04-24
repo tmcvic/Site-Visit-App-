@@ -773,6 +773,60 @@
     setTimeout(() => URL.revokeObjectURL(url), 5000);
   };
 
+  /* ---------- Save to camera roll ----------
+     Hands every captured photo and video to the iOS Share sheet as File
+     objects. From there, "Save N Items" writes them all to the Photos app
+     in one tap. This is the offline safety net — even if PDF export has
+     issues, the original captures never get lost. */
+
+  $('#report-save-photos').addEventListener('click', async () => {
+    const projectId = reportState.projectId;
+    const p = await db.getProject(projectId);
+    const media = await db.listMedia(projectId);
+    if (!media.length) { toast('No records yet.'); return; }
+
+    spinner.show(`Preparing ${media.length} item${media.length === 1 ? '' : 's'}…`);
+    try {
+      const safeTour = (p.name || 'harvest').replace(/[^a-z0-9-_ ]/gi, '').trim().replace(/\s+/g, '-').toLowerCase() || 'harvest';
+      const files = media.map((m, i) => {
+        const mime = m.mimeType || (m.type === 'image' ? 'image/jpeg' : 'video/mp4');
+        // derive a sane extension even from "image/jpeg; charset=foo"
+        let ext = (mime.split('/')[1] || 'bin').split(';')[0].trim().toLowerCase();
+        if (ext === 'quicktime') ext = 'mov';
+        if (ext === 'jpg') ext = 'jpeg';
+        const safeTitle = (m.title || '').replace(/[^a-z0-9-_ ]/gi, '').trim().replace(/\s+/g, '-').toLowerCase();
+        const idx = String(i + 1).padStart(2, '0');
+        const name = `${safeTour}-${idx}${safeTitle ? '-' + safeTitle : ''}.${ext}`;
+        return new File([m.blob], name, { type: mime });
+      });
+
+      // On iOS, the Share sheet is the cleanest path to Photos.
+      if (navigator.canShare && navigator.canShare({ files })) {
+        try {
+          await navigator.share({ files, title: p.name });
+          toast('Sent to Share sheet.');
+        } catch (e) {
+          // User-cancelled share is normal — don't treat as error.
+          if (e?.name === 'AbortError') { /* no-op */ }
+          else { console.error(e); toast('Share unavailable. Try one at a time.'); }
+        }
+      } else {
+        // Desktop / browsers without Web Share: download each file.
+        for (const file of files) {
+          triggerDownload(file, file.name);
+          // stagger so browsers don't block the burst
+          await new Promise(r => setTimeout(r, 250));
+        }
+        toast(`${files.length} file${files.length === 1 ? '' : 's'} downloaded.`);
+      }
+    } catch (e) {
+      console.error(e);
+      toast('Save failed. Check console.');
+    } finally {
+      spinner.hide();
+    }
+  });
+
   /* ---------- Harvest FieldNotes PDF template ---------- */
 
   // HARVEST Clean Eats approved palette (do not alter)
@@ -904,10 +958,10 @@
     setText(HG.stone); doc.setCharSpace(0);
     doc.text(fmtDate(project.createdAt || new Date().toISOString()).toUpperCase(), pageW - margin - 120, 74);
 
-    // Hero image (first photo if available)
+    // Hero image (first photo if available) — taller, more cinematic
     const heroBlob = photos[0] ? photos[0].blob : (videos[0] ? videos[0].thumbnail : null);
-    const heroY = 120;
-    const heroH = 210;
+    const heroY = 116;
+    const heroH = 300;
     const heroW = contentW;
     if (heroBlob) {
       try {
@@ -918,26 +972,31 @@
       }
     } else {
       setFill(HG.paperAlt); doc.rect(margin, heroY, heroW, heroH, 'F');
+      // Empty-hero hint
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(10); setText(HG.stone);
+      const hint = 'NO COVER IMAGE';
+      const hw = doc.getTextWidth(hint);
+      doc.text(hint, margin + heroW / 2 - hw / 2, heroY + heroH / 2);
     }
 
     // Cover title block
-    let coverY = heroY + heroH + 30;
+    let coverY = heroY + heroH + 36;
     eyebrow('A record of the visit', margin, coverY, HG.stone);
-    coverY += 22;
+    coverY += 38; // clear the 40pt title ascent below
 
-    // Big display title — split on comma or dash if present for the two-line look
+    // Display title — 40pt, subtle letter-spacing per design (0.01em ≈ 0.4pt at 40pt)
     const title = (project.name || 'Field Tour').toUpperCase();
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(32);
-    setText(HG.dark); doc.setCharSpace(0.4);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(40);
+    setText(HG.dark); doc.setCharSpace(0.15);
     const titleLines = doc.splitTextToSize(title, contentW);
     doc.text(titleLines, margin, coverY);
-    coverY += titleLines.length * 32 + 8;
+    coverY += titleLines.length * 42 + 6;
     doc.setCharSpace(0);
 
     // Address + context
     if (project.address) {
       body(project.address, margin, coverY, 11, HG.inkMuted);
-      coverY += 14;
+      coverY += 16;
     }
     const contextLine = `Field walk · ${fmtDate(project.createdAt)} · ${media.length} record${media.length === 1 ? '' : 's'}`;
     body(contextLine, margin, coverY, 11, HG.inkMuted);
@@ -979,41 +1038,96 @@
 
     // --- Interior pages: Photos + Videos grids ---------------------------
 
-    const gridCols = 2;
-    const gridGap = 18;
-    const gridCellW = (contentW - gridGap * (gridCols - 1)) / gridCols;
-    const gridImgH = gridCellW * 0.75; // 4:3
-
     const drawSectionHeader = (eyebrowTxt, titleTxt, sectionNum, continued, y) => {
       // accent bar
       setFill(HG.light);
       doc.rect(margin, y - 14, 4, 14, 'F');
       // eyebrow
       eyebrow(eyebrowTxt, margin + 12, y - 2);
-      // display title
+      // display title — give enough vertical clearance for 24pt ascent.
+      // Measure the title width WITH the 22pt bold font active, so the
+      // "(continued)" badge lands after it — not on top of it.
       doc.setFont('helvetica', 'bold'); doc.setFontSize(22);
-      setText(HG.dark); doc.setCharSpace(0.4);
+      setText(HG.dark); doc.setCharSpace(0.15);
       let t = titleTxt.toUpperCase();
-      doc.text(t, margin, y + 22);
+      const titleW = doc.getTextWidth(t);
+      doc.text(t, margin, y + 28);
+      doc.setCharSpace(0);
       if (continued) {
         doc.setFont('helvetica', 'normal'); doc.setFontSize(13);
-        setText(HG.stone); doc.setCharSpace(0);
-        const w = doc.getTextWidth(t) + 10;
-        doc.text('(continued)', margin + w, y + 22);
+        setText(HG.stone);
+        doc.text('(continued)', margin + titleW + 12, y + 28);
       }
-      doc.setCharSpace(0);
       // section number top-right
       if (sectionNum) {
         doc.setFont('helvetica', 'bold'); doc.setFontSize(12);
         setText(HG.light); doc.setCharSpace(0.3);
         const sw = doc.getTextWidth(sectionNum);
-        doc.text(sectionNum, pageW - margin - sw, y + 22);
+        doc.text(sectionNum, pageW - margin - sw, y + 28);
         doc.setCharSpace(0);
       }
       // divider under heading
       setStroke(HG.dark); doc.setLineWidth(1.2);
-      doc.line(margin, y + 40, pageW - margin, y + 40);
-      return y + 58;
+      doc.line(margin, y + 44, pageW - margin, y + 44);
+      return y + 64;
+    };
+
+    // "No. 01 — TITLE" + optional description. Drops the ugly "RECORD NN"
+    // fallback when title is empty — a lone "No. 01" reads as a deliberate
+    // numeric caption, not a placeholder.
+    const drawCaption = (m, globalIdx, x, capY, maxW) => {
+      // Numeric label — darker "ink-muted" so it reads on white paper
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
+      setText(HG.inkMuted); doc.setCharSpace(1);
+      const numLabel = `No. ${String(globalIdx).padStart(2, '0')}`;
+      doc.text(numLabel, x, capY);
+      const numW = doc.getTextWidth(numLabel) + 10;
+      doc.setCharSpace(0);
+
+      // Title — only if set, no synthetic fallback
+      let ty;
+      if (m.title && m.title.trim()) {
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+        setText(HG.dark); doc.setCharSpace(0.15);
+        const tLines = doc.splitTextToSize(m.title.toUpperCase(), maxW - numW);
+        doc.text(tLines, x + numW, capY);
+        doc.setCharSpace(0);
+        ty = capY + Math.max(14, tLines.length * 13) + 4;
+      } else {
+        ty = capY + 14;
+      }
+
+      if (m.description) {
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
+        setText(HG.inkMuted); doc.setCharSpace(0);
+        const dLines = doc.splitTextToSize(m.description, maxW).slice(0, 5);
+        doc.text(dLines, x, ty);
+        ty += dLines.length * 12;
+      }
+      return ty;
+    };
+
+    // Draw the photo/video cell. Handles full width vs. grid sizing.
+    const drawMediaCell = async (m, x, y, w, h, videoStyle) => {
+      const imgBlob = m.type === 'image' ? m.blob : m.thumbnail;
+      if (imgBlob) {
+        try {
+          const { dataUrl, format } = await blobToPdfImage(imgBlob, 1800, 0.88);
+          doc.addImage(dataUrl, format, x, y, w, h, undefined, 'FAST');
+        } catch {
+          setFill(HG.paperAlt); doc.rect(x, y, w, h, 'F');
+        }
+      } else {
+        setFill(HG.paperAlt); doc.rect(x, y, w, h, 'F');
+      }
+      if (videoStyle) {
+        setFill(HG.dark);
+        doc.rect(x + 12, y + 12, 54, 18, 'F');
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
+        setText(HG.paper); doc.setCharSpace(1.8);
+        doc.text('VIDEO', x + 17, y + 24);
+        doc.setCharSpace(0);
+      }
     };
 
     async function renderMediaGrid(items, sectionKind, sectionNum) {
@@ -1021,33 +1135,42 @@
       const eyebrowTxt = sectionKind === 'videos' ? 'Video record' : 'Photographs';
       const titleTxt   = sectionKind === 'videos' ? 'Walkthroughs' : 'Field records';
       const videoStyle = sectionKind === 'videos';
-      let indexOffset = 0;
-      if (sectionKind === 'videos') indexOffset = photos.length;
+      const indexOffset = sectionKind === 'videos' ? photos.length : 0;
 
       newPage();
       let y = drawSectionHeader(eyebrowTxt, titleTxt, sectionNum, false, 90);
 
-      // Optional intro line for videos section
+      // Intro line for videos section
       if (sectionKind === 'videos') {
         body('Stills drawn from recorded video. Full footage is available on request.', margin, y, 10, HG.inkMuted, contentW);
-        y += 20;
+        y += 22;
       }
 
-      const bottomLimit = pageH - 60; // leave room for page chrome footer
+      const bottomLimit = pageH - 60; // room for page-chrome footer
+
+      // Choose layout: single items get a full-width cinematic image;
+      // everything else runs in a 2-column grid.
+      const single = items.length === 1;
+      const gridCols = single ? 1 : 2;
+      const gridGap = 20;
+      const cellW = single ? contentW : (contentW - gridGap) / 2;
+      const imgH  = single ? cellW * 0.625 : cellW * 0.75; // 16:10 hero feel vs 4:3
 
       for (let i = 0; i < items.length; i += gridCols) {
         const row = items.slice(i, i + gridCols);
 
-        // Measure row height — max caption size among the pair
-        let maxCapLines = 0;
+        // Row height — max caption block among cells in the row.
+        let maxCapH = 0;
         row.forEach((m, j) => {
-          const globalIdx = indexOffset + i + j + 1;
-          const titleStr = (m.title || `Record ${String(globalIdx).padStart(2, '0')}`).toUpperCase();
-          const tl = doc.splitTextToSize(titleStr, gridCellW).length;
-          const dl = m.description ? Math.min(5, doc.splitTextToSize(m.description, gridCellW).length) : 0;
-          maxCapLines = Math.max(maxCapLines, tl * 14 + dl * 12);
+          const tl = m.title && m.title.trim()
+            ? doc.splitTextToSize(m.title.toUpperCase(), cellW).length * 13
+            : 0;
+          const dl = m.description
+            ? Math.min(5, doc.splitTextToSize(m.description, cellW).length) * 12
+            : 0;
+          maxCapH = Math.max(maxCapH, 14 + tl + dl);
         });
-        const rowH = gridImgH + 16 + maxCapLines + 24;
+        const rowH = imgH + 18 + maxCapH + 24;
 
         if (y + rowH > bottomLimit) {
           newPage();
@@ -1057,57 +1180,9 @@
         for (let j = 0; j < row.length; j++) {
           const m = row[j];
           const globalIdx = indexOffset + i + j + 1;
-          const x = margin + j * (gridCellW + gridGap);
-
-          // Image (rounded 6pt radius — jsPDF doesn't clip, so we use the
-          // native roundedRect as a background and embed image on top).
-          const imgBlob = m.type === 'image' ? m.blob : m.thumbnail;
-          if (imgBlob) {
-            try {
-              const { dataUrl, format } = await blobToPdfImage(imgBlob, 1400, 0.85);
-              doc.addImage(dataUrl, format, x, y, gridCellW, gridImgH, undefined, 'FAST');
-            } catch {
-              setFill(HG.paperAlt); doc.rect(x, y, gridCellW, gridImgH, 'F');
-            }
-          } else {
-            setFill(HG.paperAlt); doc.rect(x, y, gridCellW, gridImgH, 'F');
-          }
-
-          // VIDEO chip + duration placeholder
-          if (videoStyle) {
-            setFill(HG.dark);
-            doc.rect(x + 10, y + 10, 52, 16, 'F');
-            doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5);
-            setText(HG.paper); doc.setCharSpace(1.8);
-            doc.text('VIDEO', x + 14, y + 21);
-            doc.setCharSpace(0);
-          }
-
-          // Caption: "No. 01 — TITLE" + description
-          const capY = y + gridImgH + 16;
-          doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
-          setText(HG.light); doc.setCharSpace(1);
-          const numLabel = `No. ${String(globalIdx).padStart(2, '0')}`;
-          doc.text(numLabel, x, capY);
-          const numW = doc.getTextWidth(numLabel) + 8;
-          doc.setCharSpace(0);
-
-          doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
-          setText(HG.dark); doc.setCharSpace(0.3);
-          const titleStr = (m.title || `Record ${String(globalIdx).padStart(2, '0')}`).toUpperCase();
-          const tLines = doc.splitTextToSize(titleStr, gridCellW - numW);
-          doc.text(tLines, x + numW, capY);
-          doc.setCharSpace(0);
-
-          let ty = capY + Math.max(14, tLines.length * 13) + 2;
-
-          if (m.description) {
-            doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
-            setText(HG.inkMuted); doc.setCharSpace(0);
-            const dLines = doc.splitTextToSize(m.description, gridCellW).slice(0, 5);
-            doc.text(dLines, x, ty);
-            ty += dLines.length * 12;
-          }
+          const x = margin + j * (cellW + gridGap);
+          await drawMediaCell(m, x, y, cellW, imgH, videoStyle);
+          drawCaption(m, globalIdx, x, y + imgH + 18, cellW);
         }
         y += rowH;
       }

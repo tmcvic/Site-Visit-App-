@@ -2,7 +2,7 @@
    Caches the app shell + CDN libraries so the PWA works offline
    after the first load. Bump CACHE_VERSION to invalidate old caches. */
 
-const CACHE_VERSION = 'harvest-fieldnotes-v3';
+const CACHE_VERSION = 'harvest-fieldnotes-v5';
 const APP_SHELL = [
   './',
   './index.html',
