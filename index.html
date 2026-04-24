@@ -470,7 +470,87 @@
       color: var(--ink); font-size: 14px; font-weight: 500;
       letter-spacing: 0.02em;
     }
-  </style>
+
+    /* ---------- Markup ---------- */
+    #view-markup {
+      position: fixed; inset: 0;
+      background: #0B2A20;
+      z-index: 150;
+      padding: 0;
+    }
+    #view-markup.active {
+      display: flex; flex-direction: column;
+    }
+    .markup-topbar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: calc(8px + var(--safe-top)) 12px 8px;
+      color: var(--paper);
+      background: rgba(11,42,32,0.95);
+    }
+    .markup-topbar .t-label {
+      font-family: var(--font-ui); font-weight: 700;
+      font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase;
+      color: var(--stone);
+    }
+    .markup-topbar button {
+      background: transparent; border: 0; color: var(--paper);
+      font-family: var(--font-ui); font-size: 15px; font-weight: 600;
+      padding: 10px 14px; min-height: 44px; min-width: 44px;
+      border-radius: var(--radius-sm);
+    }
+    .markup-topbar button:active { background: rgba(255,255,255,0.1); }
+    .markup-topbar button.primary { color: var(--accent); }
+
+    .markup-canvas-wrap {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      overflow: hidden; background: #0B2A20;
+    }
+    .markup-canvas-wrap canvas {
+      max-width: 100%; max-height: 100%;
+      touch-action: none;
+      cursor: crosshair;
+      display: block;
+    }
+
+    .markup-toolbar {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 8px;
+      padding: 12px 16px calc(18px + var(--safe-bottom));
+      background: rgba(11,42,32,0.95);
+    }
+    .markup-toolbar .tool-btn {
+      background: transparent; border: 0; color: var(--paper);
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 44px; min-height: 44px; padding: 8px;
+      border-radius: var(--radius-sm);
+      font-family: var(--font-ui); font-size: 12px; font-weight: 600;
+      letter-spacing: 0.06em; text-transform: uppercase;
+      gap: 4px;
+    }
+    .markup-toolbar .tool-btn:active { background: rgba(255,255,255,0.1); }
+    .markup-toolbar .tool-btn svg { width: 22px; height: 22px; }
+    .markup-colors {
+      display: inline-flex; gap: 10px; align-items: center;
+      padding: 6px 10px; background: rgba(255,255,255,0.06);
+      border-radius: var(--radius-pill);
+    }
+    .markup-color {
+      width: 28px; height: 28px; border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.35);
+      background: currentColor;
+      padding: 0; cursor: pointer;
+      transition: transform .12s, border-color .12s;
+    }
+    .markup-color.active {
+      border-color: var(--paper);
+      transform: scale(1.15);
+    }
+
+    .capture-markup-row {
+      padding: 12px 20px 0;
+      display: none;
+    }
+    .capture-markup-row.visible { display: block; }
 </head>
 <body>
   <div class="app" id="app">
@@ -531,6 +611,13 @@
             Video
           </label>
           <input type="file" id="file-video" accept="video/*" capture="environment" />
+        </div>
+
+        <div class="capture-markup-row" id="capture-markup-row">
+          <button class="btn secondary block" id="capture-markup">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 113 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+            Markup photo
+          </button>
         </div>
 
         <div class="capture-fields">
@@ -613,6 +700,9 @@
           <div class="eyebrow" id="detail-position">Record</div>
           <div class="display display-sm" id="detail-project-name">Detail</div>
         </div>
+        <button class="iconbtn" id="detail-markup" aria-label="Markup">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 113 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+        </button>
         <button class="iconbtn" id="detail-delete" aria-label="Delete">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg>
         </button>
@@ -673,6 +763,31 @@
       </div>
     </div>
   </div>
+
+  <!-- Markup overlay — full-screen editor for drawing on photos -->
+  <section class="view" id="view-markup" aria-hidden="true">
+    <div class="markup-topbar">
+      <button id="markup-cancel">Cancel</button>
+      <div class="t-label">Markup</div>
+      <button id="markup-done" class="primary">Done</button>
+    </div>
+    <div class="markup-canvas-wrap">
+      <canvas id="markup-canvas"></canvas>
+    </div>
+    <div class="markup-toolbar">
+      <button class="tool-btn" id="markup-undo" aria-label="Undo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10h11a5 5 0 010 10H7"/><path d="M7 6l-4 4 4 4"/></svg>
+      </button>
+      <div class="markup-colors">
+        <button class="markup-color active" data-color="#ef4444" style="color:#ef4444;" aria-label="Red"></button>
+        <button class="markup-color" data-color="#f4c430" style="color:#f4c430;" aria-label="Yellow"></button>
+        <button class="markup-color" data-color="#ffffff" style="color:#ffffff;" aria-label="White"></button>
+      </div>
+      <button class="tool-btn" id="markup-clear" aria-label="Clear">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+  </section>
 
   <div class="toast" id="toast"></div>
   <div class="spinner-overlay" id="spinner">

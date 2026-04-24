@@ -350,14 +350,14 @@
 
   /* ---------- View: Capture ---------- */
 
-  let captureState = { projectId: null, currentMedia: null, currentBlob: null, currentType: null };
+  let captureState = { projectId: null, currentMedia: null, currentBlob: null, currentOriginalBlob: null, currentType: null, currentMarkup: [] };
 
   async function renderCapture(projectId) {
     const p = await db.getProject(projectId);
     if (!p) { navigate('/'); return; }
     showView('view-capture');
 
-    captureState = { projectId, currentMedia: null, currentBlob: null, currentType: null };
+    captureState = { projectId, currentMedia: null, currentBlob: null, currentOriginalBlob: null, currentType: null, currentMarkup: [] };
 
     const mediaCount = (await db.listMedia(projectId)).length;
     $('#capture-project-name').textContent = p.name;
@@ -374,26 +374,43 @@
       </div>`;
     $('#file-photo').value = '';
     $('#file-video').value = '';
+    $('#capture-markup-row').classList.remove('visible');
   }
 
   const loadCapturedFile = async (file, type) => {
     if (!file) return;
     captureState.currentBlob = file;
+    captureState.currentOriginalBlob = file;  // preserve untouched original
+    captureState.currentMarkup = [];
     captureState.currentType = type;
     const url = URL.createObjectURL(file);
     const stage = $('#capture-stage');
     if (type === 'image') {
       stage.innerHTML = `<img alt="preview" src="${url}"/>`;
+      $('#capture-markup-row').classList.add('visible');
     } else {
       stage.innerHTML = `<video playsinline controls muted src="${url}"></video><div class="video-badge">VIDEO</div>`;
+      $('#capture-markup-row').classList.remove('visible');
     }
   };
+
+  $('#capture-markup').addEventListener('click', async () => {
+    if (!captureState.currentBlob || captureState.currentType !== 'image') return;
+    const origBlob = captureState.currentOriginalBlob || captureState.currentBlob;
+    const result = await openMarkup(origBlob, captureState.currentMarkup || []);
+    if (!result) return;
+    captureState.currentBlob = result.blob;
+    captureState.currentMarkup = result.strokes;
+    const url = URL.createObjectURL(result.blob);
+    $('#capture-stage').innerHTML = `<img alt="preview" src="${url}"/>`;
+    toast(result.strokes.length ? 'Markup applied.' : 'Markup removed.');
+  });
 
   $('#file-photo').addEventListener('change', e => loadCapturedFile(e.target.files[0], 'image'));
   $('#file-video').addEventListener('change', e => loadCapturedFile(e.target.files[0], 'video'));
 
   const saveCurrentCapture = async () => {
-    const { projectId, currentBlob, currentType } = captureState;
+    const { projectId, currentBlob, currentOriginalBlob, currentType, currentMarkup } = captureState;
     if (!currentBlob) { toast('Take a photo or video first'); return null; }
     const title = $('#media-title').value.trim();
     const description = $('#media-description').value.trim();
@@ -411,6 +428,10 @@
       type: currentType,
       mimeType: currentBlob.type || (currentType === 'image' ? 'image/jpeg' : 'video/mp4'),
       blob: currentBlob,
+      // Keep the untouched original so markup stays non-destructive.
+      // Videos don't use markup — blobOriginal stays as the blob itself.
+      blobOriginal: currentType === 'image' ? (currentOriginalBlob || currentBlob) : currentBlob,
+      markup: currentType === 'image' ? (currentMarkup || []) : [],
       thumbnail,
       order,
       createdAt: new Date().toISOString()
@@ -454,6 +475,148 @@
     toast('Tour closed');
     navigate(`/project/${pid}/report`);
   });
+
+  /* ---------- Markup (photo annotation) ----------
+     Full-screen canvas editor. Non-destructive: strokes are stored on the
+     media record alongside the original blob, so the user can re-open the
+     editor later and undo/remove any of their marks. The "display" blob is
+     a flattened composite used for thumbnails, grids, PDFs, and camera-roll
+     export — so downstream rendering doesn't have to know about markup.
+
+     Args:
+       sourceBlob    — the ORIGINAL untouched photo blob
+       initialStrokes — any strokes already saved on this media (default [])
+     Returns Promise<{ blob, strokes } | null>
+       blob    — new composite (original + strokes flattened)
+       strokes — final strokes array to persist on the media record
+       null    — user tapped Cancel */
+
+  function openMarkup(sourceBlob, initialStrokes = []) {
+    return new Promise((resolve) => {
+      const view   = $('#view-markup');
+      const canvas = $('#markup-canvas');
+      const ctx    = canvas.getContext('2d');
+
+      // Seed with any pre-existing strokes — clone so we don't mutate caller
+      const strokes = initialStrokes.map(s => ({
+        color: s.color,
+        width: s.width,
+        points: s.points.map(p => ({ x: p.x, y: p.y })),
+      }));
+      let liveStroke = null;
+      let color = '#ef4444';
+      let img = null;
+
+      const drawStroke = (s) => {
+        if (!s || s.points.length === 0) return;
+        ctx.strokeStyle = s.color;
+        ctx.lineWidth = s.width;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        s.points.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+        // single tap: draw a dot so tap-to-point still renders
+        if (s.points.length === 1) ctx.lineTo(s.points[0].x + 0.01, s.points[0].y + 0.01);
+        ctx.stroke();
+      };
+      const redraw = () => {
+        if (!img) return;
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0);
+        strokes.forEach(drawStroke);
+        if (liveStroke) drawStroke(liveStroke);
+      };
+
+      const coords = (e) => {
+        const r = canvas.getBoundingClientRect();
+        return {
+          x: (e.clientX - r.left) * (canvas.width  / r.width),
+          y: (e.clientY - r.top)  * (canvas.height / r.height),
+        };
+      };
+
+      const onDown = (e) => {
+        e.preventDefault();
+        try { canvas.setPointerCapture(e.pointerId); } catch {}
+        const w = Math.max(4, canvas.width / 180);
+        liveStroke = { color, width: w, points: [coords(e)] };
+        redraw();
+      };
+      const onMove = (e) => {
+        if (!liveStroke) return;
+        liveStroke.points.push(coords(e));
+        redraw();
+      };
+      const onUp = () => {
+        if (!liveStroke) return;
+        strokes.push(liveStroke);
+        liveStroke = null;
+        redraw();
+      };
+      const onUndo  = () => { strokes.pop(); redraw(); };
+      const onClear = () => { strokes.length = 0; redraw(); };
+      const onColor = (e) => {
+        const btn = e.currentTarget;
+        color = btn.dataset.color;
+        $$('.markup-color').forEach(b => b.classList.toggle('active', b === btn));
+      };
+
+      const teardown = () => {
+        canvas.removeEventListener('pointerdown', onDown);
+        canvas.removeEventListener('pointermove', onMove);
+        canvas.removeEventListener('pointerup', onUp);
+        canvas.removeEventListener('pointercancel', onUp);
+        $$('.markup-color').forEach(b => b.removeEventListener('click', onColor));
+        $('#markup-undo').removeEventListener('click', onUndo);
+        $('#markup-clear').removeEventListener('click', onClear);
+        $('#markup-done').removeEventListener('click', onDone);
+        $('#markup-cancel').removeEventListener('click', onCancel);
+        view.classList.remove('active');
+        view.setAttribute('aria-hidden', 'true');
+      };
+      const onDone = () => {
+        if (!img) { teardown(); resolve(null); return; }
+        const finalStrokes = strokes.map(s => ({
+          color: s.color, width: s.width,
+          points: s.points.map(p => ({ x: p.x, y: p.y })),
+        }));
+        canvas.toBlob((blob) => { teardown(); resolve({ blob, strokes: finalStrokes }); }, 'image/jpeg', 0.92);
+      };
+      const onCancel = () => { teardown(); resolve(null); };
+
+      // Reset color-button state to the first swatch (red)
+      $$('.markup-color').forEach((b, i) => b.classList.toggle('active', i === 0));
+      color = '#ef4444';
+
+      // Load source image
+      const url = URL.createObjectURL(sourceBlob);
+      const imgEl = new Image();
+      imgEl.onload = () => {
+        img = imgEl;
+        canvas.width  = imgEl.naturalWidth;
+        canvas.height = imgEl.naturalHeight;
+        redraw();
+        URL.revokeObjectURL(url);
+      };
+      imgEl.onerror = () => { URL.revokeObjectURL(url); teardown(); resolve(null); };
+      imgEl.src = url;
+
+      // Wire handlers
+      canvas.addEventListener('pointerdown', onDown);
+      canvas.addEventListener('pointermove', onMove);
+      canvas.addEventListener('pointerup', onUp);
+      canvas.addEventListener('pointercancel', onUp);
+      $$('.markup-color').forEach(b => b.addEventListener('click', onColor));
+      $('#markup-undo').addEventListener('click', onUndo);
+      $('#markup-clear').addEventListener('click', onClear);
+      $('#markup-done').addEventListener('click', onDone);
+      $('#markup-cancel').addEventListener('click', onCancel);
+
+      view.classList.add('active');
+      view.setAttribute('aria-hidden', 'false');
+    });
+  }
 
   /* ---------- Video thumbnail extraction ---------- */
 
@@ -709,6 +872,30 @@
       const next = media[(idx + 1) % media.length];
       navigate(`/project/${projectId}/media/${next.id}`);
     };
+    // Markup button only makes sense for photos — hide for videos
+    const markupBtn = $('#detail-markup');
+    if (markupBtn) {
+      markupBtn.style.display = m.type === 'image' ? '' : 'none';
+      markupBtn.onclick = async () => {
+        if (m.type !== 'image') return;
+        // Source = the untouched original. Fall back to the display blob for
+        // media records captured before non-destructive markup existed.
+        const origBlob = m.blobOriginal || m.blob;
+        const existingStrokes = Array.isArray(m.markup) ? m.markup : [];
+        const result = await openMarkup(origBlob, existingStrokes);
+        if (!result) return;
+        const fresh = await db.getMedia(m.id);
+        if (!fresh) return;
+        fresh.blob = result.blob;
+        // Seed blobOriginal on first-ever markup of a legacy record
+        fresh.blobOriginal = fresh.blobOriginal || origBlob;
+        fresh.markup = result.strokes;
+        await db.updateMedia(fresh);
+        toast(result.strokes.length ? 'Markup saved.' : 'Markup cleared.');
+        await renderDetail(projectId, m.id);
+      };
+    }
+
     $('#detail-delete').onclick = async () => {
       const ok = await confirmModal('Delete this record?', 'This photo or video goes away. Can\u2019t be undone.');
       if (!ok) return;
